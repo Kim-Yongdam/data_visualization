@@ -1,98 +1,114 @@
 <!DOCTYPE html>
-<meta charset="utf-8">
-<style>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1,user-scalable=no">
+    <title>Wind Animation</title>
 
-.background {
-  fill: none;
-  pointer-events: all;
-}
+    <link rel="stylesheet" href="http://js.arcgis.com/3.8/js/esri/css/esri.css">
 
-#states {
-  fill: #aaa;
-}
+    <style>
+      html,body {
+        width:100%;
+        height:100%;
+        margin: 0;
+        padding: 0px 0 0 0;
+      }
+      #mapCanvas {
+        padding:0;
+      }
+    </style>
 
-#states .active {
-  fill: orange;
-}
+    <script>
+      var dojoConfig = {
+        paths: {
+          plugins: location.pathname.replace(/\/[^/]+$/, "") + "/plugins"
+        }
+      };
+    </script>
+    <script src="./windy.js"></script>
+    <script src="//js.arcgis.com/3.12compact/"></script>
+    <script>
+      var map, rasterLayer;
+      var canvasSupport;
+      require([
+        "esri/map", "esri/layers/ArcGISTiledMapServiceLayer",
+        "esri/domUtils", "esri/request",
+        "dojo/parser", "dojo/number", "dojo/json", "dojo/dom",
+        "dijit/registry", "./RasterLayer.js","esri/layers/WebTiledLayer",
+        "esri/config",
+        "dojo/domReady!"
+      ], function(
+        Map, ArcGISTiledMapServiceLayer,
+        domUtils, esriRequest,
+        parser, number, JSON, dom,
+        registry, RasterLayer, WebTiledLayer, esriConfig
+      ){
+        parser.parse();
+        // does the browser support canvas?
+        canvasSupport = supports_canvas();
 
-#state-borders {
-  fill: none;
-  stroke: #fff;
-  stroke-width: 1.5px;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  pointer-events: none;
-}
+        map = new Map("mapCanvas", {
+          center: [-99.076, 39.132],
+          zoom: 3,
+          basemap: "dark-gray"
+        });
 
-</style>
-<body>
-<script src="//d3js.org/d3.v3.min.js"></script>
-<script src="//d3js.org/topojson.v1.min.js"></script>
-<script>
+        map.on("load", mapLoaded);
+        function mapLoaded() {
+          // Add raster layer
+          if ( canvasSupport ) {
+            rasterLayer = new RasterLayer(null, {
+              opacity: 0.75
+            });
+            map.addLayer(rasterLayer);
 
-var width = 960,
-    height = 500,
-    centered;
+            map.on("extent-change", redraw);
+            map.on("resize", function(){});
+            map.on("zoom-start", redraw);
+            map.on("pan-start", redraw);
+            var layersRequest = esriRequest({
+              url: './gfs.json',
+              content: {},
+              handleAs: "json"
+            });
+            layersRequest.then(
+              function(response) {
+                console.log(response);
+                windy = new Windy({ canvas: rasterLayer._element, data: response });
+                redraw();
+            }, function(error) {
+                console.log("Error: ", error.message);
+            });
+          } else {
+            dom.byId("mapCanvas").innerHTML = "This browser doesn't support canvas. Visit <a target='_blank' href='http://www.caniuse.com/#search=canvas'>caniuse.com</a> for supported browsers";
+          }
+        }
+        // does the browser support canvas?
+        function supports_canvas() {
+          return !!document.createElement("canvas").getContext;
+        }
+        function redraw(){
+          rasterLayer._element.width = map.width;
+          rasterLayer._element.height = map.height;
+          windy.stop();
+          var extent = map.geographicExtent;
+          setTimeout(function(){
+            windy.start(
+              [[0,0],[map.width, map.height]],
+              map.width,
+              map.height,
+              [[extent.xmin, extent.ymin],[extent.xmax, extent.ymax]]
+            );
+          },500);
+        }
+      });
+    </script>
+  </head>
 
-var projection = d3.geo.albersUsa()
-    .scale(1070)
-    .translate([width / 2, height / 2]);
+  <body class="">
+     <div id="mapCanvas" style="height:100%;">
+     </div>
+  </body>
 
-var path = d3.geo.path()
-    .projection(projection);
-
-var svg = d3.select("body").append("svg")
-    .attr("width", width)
-    .attr("height", height);
-
-svg.append("rect")
-    .attr("class", "background")
-    .attr("width", width)
-    .attr("height", height)
-    .on("click", clicked);
-
-var g = svg.append("g");
-
-d3.json("/mbostock/raw/4090846/us.json", function(error, us) {
-  if (error) throw error;
-
-  g.append("g")
-      .attr("id", "states")
-    .selectAll("path")
-      .data(topojson.feature(us, us.objects.states).features)
-    .enter().append("path")
-      .attr("d", path)
-      .on("click", clicked);
-
-  g.append("path")
-      .datum(topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; }))
-      .attr("id", "state-borders")
-      .attr("d", path);
-});
-
-function clicked(d) {
-  var x, y, k;
-
-  if (d && centered !== d) {
-    var centroid = path.centroid(d);
-    x = centroid[0];
-    y = centroid[1];
-    k = 4;
-    centered = d;
-  } else {
-    x = width / 2;
-    y = height / 2;
-    k = 1;
-    centered = null;
-  }
-
-  g.selectAll("path")
-      .classed("active", centered && function(d) { return d === centered; });
-
-  g.transition()
-      .duration(750)
-      .attr("transform", "translate(" + width / 2 + "," + height / 2 + ")scale(" + k + ")translate(" + -x + "," + -y + ")")
-      .style("stroke-width", 1.5 / k + "px");
-}
-
-</script>
+</html>
